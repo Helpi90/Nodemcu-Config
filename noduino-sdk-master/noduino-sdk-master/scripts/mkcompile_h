@@ -1,0 +1,121 @@
+#!/bin/bash
+
+#set -x
+
+TARGET=$1
+CC=$2
+CPU=$3
+VERSION=$4
+HW_VER=$5
+
+if [ -z $TARGET ]; then
+	TARGET=compile.h
+else
+	if [ ! -r $TARGET ]; then
+		TARGET_DIR=`basename $TARGET`
+		if [ ! -r $TARGET_DIR ]; then
+			TARGET=compile.h
+		fi
+	fi
+fi
+
+if [ -z $CPU ]; then
+	CPU="xtensa"
+fi
+
+vecho() { [ "${quiet}" = "silent_" ] || echo "$@" ; }
+
+set -f
+
+# Fix the language to get consistent output
+LC_ALL=C
+export LC_ALL
+
+if [ -z $VERSION ]; then
+	VERSION=$CONFIG_VERSION
+fi
+
+if [ -z $VERSION ]; then
+	echo "Error: Please set the CONFIG_VERSION!"
+	exit 0
+fi
+
+if [ -z $HW_VER ]; then
+	VERSION=$CONFIG_HW_VERSION
+fi
+
+if [ -z $HW_VER ]; then
+	echo "Error: Please set the CONFIG_HW_VERSION!"
+	exit 0
+fi
+
+TIMESTAMP=`date`
+
+UTS_VERSION="$VERSION"
+FW_VERSION="$VERSION"
+CONFIG_FLAGS=""
+UTS_VERSION="$UTS_VERSION $CONFIG_FLAGS $TIMESTAMP"
+
+# Truncate to maximum length
+
+UTS_LEN=64
+UTS_TRUNCATE="cut -b -$UTS_LEN"
+
+#FW_VERSION="$FW_VERSION-`date +%s`"
+FW_VERSION="`date +%y%m%d%H%M%S`"
+
+# Generate a temporary compile.h
+
+( echo \#ifndef __NODUINO_COMPILE_H__
+  echo \#define __NODUINO_COMPILE_H__
+  echo /\* This file is auto generated, version $VERSION \*/
+  if [ -n "$CONFIG_FLAGS" ] ; then echo "/* $CONFIG_FLAGS */"; fi
+  
+  echo \#define UTS_MACHINE \"$CPU\"
+
+  echo \#define UTS_VERSION \"`echo $UTS_VERSION | $UTS_TRUNCATE`\"
+  echo \#define FW_VERSION	\"$FW_VERSION\"
+  echo \#define HW_VERSION	\"$HW_VER\"
+
+  echo \#define NODUINO_COMPILE_TIME \"`date +%T`\"
+  echo \#define NODUINO_COMPILE_BY \"`whoami`\"
+  echo \#define NODUINO_COMPILE_HOST \"`hostname | $UTS_TRUNCATE`\"
+
+  domain=`dnsdomainname 2> /dev/null`
+  if [ -z "$domain" ]; then
+    domain=`domainname 2> /dev/null`
+  fi
+
+  if [ -n "$domain" ]; then
+    echo \#define NODUINO_COMPILE_DOMAIN \"`echo $domain | $UTS_TRUNCATE`\"
+  else
+    echo \#define NODUINO_COMPILE_DOMAIN
+  fi
+
+  echo \#define NODUINO_COMPILER \"`$CC -v 2>&1 | tail -n 1`\"
+
+  echo const char noduino_banner\[\] = \"Noduino version $UTS_VERSION \(`whoami`@`hostname | $UTS_TRUNCATE`\) \(`$CC -v 2>&1 | tail -n 1`\)\\r\\n\"\;
+  echo const char fw_version\[\] = \"Firmware Version $FW_VERSION\"\;
+  echo const char hw_version\[\] = \"Hardware Version $HW_VER\"\;
+  echo \#endif
+) > .tmpcompile
+
+# Only replace the real compile.h if the new one is different,
+# in order to preserve the timestamp and avoid unnecessary
+# recompilations.
+# We don't consider the file changed if only the date/time changed.
+# A kernel config change will increase the generation number, thus
+# causing compile.h to be updated (including date/time) due to the 
+# changed comment in the
+# first line.
+
+if [ -r $TARGET ] && \
+      grep -v 'UTS_VERSION\|NODUINO_COMPILE_TIME' $TARGET > .tmpver.1 && \
+      grep -v 'UTS_VERSION\|NODUINO_COMPILE_TIME' .tmpcompile > .tmpver.2 && \
+      cmp -s .tmpver.1 .tmpver.2; then
+   rm -f .tmpcompile
+else
+   vecho "  UPD     $TARGET"
+   mv -f .tmpcompile $TARGET
+fi
+rm -f .tmpver.1 .tmpver.2

@@ -1,0 +1,5 @@
+Use following command to convert the png file to xbm c file:
+
+	convert noduino-logo.png noduino-logo.xbm
+	sed -i "y/-/_/" noduino-logo.xbm
+	sed -i "s/] = {/] U8G_PROGMEM = {/" noduino-logo.xbm

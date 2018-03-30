@@ -1,0 +1,56 @@
+sudo: false
+language: cpp
+addons:
+  apt:
+    packages:
+    - python-serial
+    - srecord
+install:
+- cd toolchain
+- python gen.py
+- cd ..
+script:
+#TODO: put build lib script here
+#
+#build open-plug
+- cd sketch/open-plug
+- make clean
+- make
+- cd ../../
+#build open-light
+- cd sketch/open-light
+- make clean
+- make
+- cd ../../
+#build open-light-ctrl
+- cd sketch/open-light-ctrl
+- make clean
+- make
+- cd ../../
+#build open-onoff
+- cd sketch/open-onoff
+- make clean
+- make
+- cd ../../
+#build open-onoff-pro
+- cd sketch/open-onoff-pro
+- make clean
+- make
+- cd ../../
+#build open-curtain
+- cd sketch/open-curtain
+- make clean
+- make
+- cd ../../
+#build env-sensor
+# - cd sketch/env-sensor
+# - make clean
+# - make
+# - cd ../../
+#build door-sensor
+#- cd sketch/door-sensor
+#- make clean
+#- make
+#- cd ../../
+# http://docs.travis-ci.com/user/environment-variables/#Convenience-Variables
+# - if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then bash "$TRAVIS_BUILD_DIR"/tools/pr-build.sh; fi

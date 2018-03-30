@@ -1,0 +1,421 @@
+#
+# Copyright (c) 2015 MaiKe Labs
+#
+#
+
+ESPSDK_BASE		?= $(SDK_BASE)/sdk
+TOOLCHAIN_DIR	?= $(SDK_BASE)/toolchain
+
+# paths from the SDK used in this project
+SDK_INCDIR	+= include include/driver
+SDK_LIBDIR = lib
+SDK_LDDIR = ld
+
+# various paths from the ESPSDK used in this project
+ESPSDK_INCDIR	+= include include/json
+ESPSDK_LIBDIR	= lib
+ESPSDK_LDDIR	= ld
+
+# libraries used in this project, mainly provided by the ESPSDK
+LIBS		+= gcc
+LIBS		+= crypto espnow json lwip_536 lwip mesh net80211 phy pp pwm smartconfig upgrade wpa wps main ssl
+LIBS		+= driver cloud airkiss
+
+# toolchain
+XCC		?= $(TOOLCHAIN_DIR)/xtensa-lx106-elf/bin/xtensa-lx106-elf-gcc
+XAR		?= $(TOOLCHAIN_DIR)/xtensa-lx106-elf/bin/xtensa-lx106-elf-ar
+XLD		?= $(TOOLCHAIN_DIR)/xtensa-lx106-elf/bin/xtensa-lx106-elf-gcc
+XOBJCOPY	?= $(TOOLCHAIN_DIR)/xtensa-lx106-elf/bin/xtensa-lx106-elf-objcopy
+
+# compiler flags using during compilation of source files
+CFLAGS		+= -g -O2 -Wpointer-arith -Wundef -Werror -Wl,-EL -fno-inline-functions -nostdlib -mlongcalls -mtext-section-literals  -D__ets__ -DICACHE_FLASH
+
+# linker flags used to generate the main object file
+LDFLAGS		+= -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static
+
+# esptool path and port
+ifeq ($(OS),Windows_NT)
+	ESPTOOL		?= $(TOOLCHAIN_DIR)/bin/esptool.exe
+	CONFIG_ESPPORT	?= COM3
+else
+	ESPTOOL		?= $(TOOLCHAIN_DIR)/bin/esptool
+
+	UNAME_S		:= $(shell uname -s)
+	ifeq ($(UNAME_S),Darwin)
+		CONFIG_ESPPORT	?= /dev/cu.SLAB_USBtoUART
+	endif
+	ifeq ($(UNAME_S),Linux)
+		CONFIG_ESPPORT	?= /dev/ttyUSB0
+	endif
+endif
+
+# firmware generating tool
+FW_TOOL		?= $(TOOLCHAIN_DIR)/bin/gen_appbin.py
+ESPTOOL_PY	?= $(TOOLCHAIN_DIR)/bin/esptool.py
+
+CONFIG_BOOT_ADDR ?= 0x00000
+
+ifeq ($(CONFIG_FLASH_SIZE), 512KB)
+CONFIG_RFCAL_ADDR	?= 0x7B000
+CONFIG_RFINIT_ADDR	?= 0x7C000
+CONFIG_SYSCONF_ADDR	?= 0x7D000
+CONFIG_YUNCONF_ADDR	?= 0x74000
+FLASH_SIZE = 512
+
+# 0 = 512KB (256KB + 256KB)
+flash_map = 0
+CONFIG_USER1_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.512.user1.ld
+CONFIG_USER2_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.512.user2.ld
+
+user1_addr = 0x01000
+user2_addr = 0x41000
+endif
+
+ifeq ($(CONFIG_FLASH_SIZE), 1MB)
+CONFIG_RFCAL_ADDR	?= 0xFB000
+CONFIG_RFINIT_ADDR	?= 0xFC000
+CONFIG_SYSCONF_ADDR	?= 0xFD000
+CONFIG_YUNCONF_ADDR	?= 0xF4000
+FLASH_SIZE = 1024
+
+# 2 = 1024KB (512KB + 512KB)
+flash_map = 2
+CONFIG_USER1_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.1024.user1.ld
+CONFIG_USER2_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.1024.user2.ld
+
+user1_addr = 0x01000
+# user1_addr + 512K
+user2_addr = 0x81000
+endif
+
+ifeq ($(CONFIG_FLASH_SIZE), 2MB)
+CONFIG_RFCAL_ADDR ?= 0x1FB000
+CONFIG_RFINIT_ADDR ?= 0x1FC000
+CONFIG_SYSCONF_ADDR ?= 0x1FD000
+CONFIG_YUNCONF_ADDR ?= 0x1F4000
+
+FLASH_SIZE = 2048
+
+ifneq ($(CONFIG_FLASH_MAP_EXTEND), y)
+# 3 = 2048KB (512KB + 512KB)
+flash_map = 3
+
+CONFIG_USER1_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.1024.user1.ld
+CONFIG_USER2_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.1024.user2.ld
+
+user1_addr = 0x01000
+# user1_addr + 512K
+user2_addr = 0x81000
+else
+# 5 = 2048KB (1024KB + 1024KB)
+flash_map = 5
+CONFIG_USER1_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.2048.ld
+CONFIG_USER2_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.2048.ld
+
+CONFIG_OTA_BOOTLOADER=boot_v1.5
+
+user1_addr = 0x01000
+# user1_addr + 1M 
+user2_addr = 0x101000
+endif
+endif
+
+ifeq ($(CONFIG_FLASH_SIZE), 4MB)
+CONFIG_RFCAL_ADDR ?= 0x3FB000
+CONFIG_RFINIT_ADDR ?= 0x3FC000
+CONFIG_SYSCONF_ADDR ?= 0x3FD000
+CONFIG_YUNCONF_ADDR ?= 0x3F4000
+
+FLASH_SIZE = 4096
+
+ifneq ($(CONFIG_FLASH_MAP_EXTEND), y)
+# 4 = 4096KB (512KB + 512KB)
+flash_map = 4
+CONFIG_USER1_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.1024.user1.ld
+CONFIG_USER2_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.1024.user2.ld
+
+user1_addr = 0x01000
+# user1_addr + 512K
+user2_addr = 0x81000
+else
+# 6 = 4096KB (1024KB + 1024KB)
+flash_map = 6
+CONFIG_USER1_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.2048.ld
+CONFIG_USER2_LD_SCRIPT	?= $(CONFIG_CPU).ota.new.2048.ld
+
+# 1024K + 1024K need bootloader v1.4+ support
+CONFIG_OTA_BOOTLOADER=boot_v1.5
+
+user1_addr = 0x01000
+# user1_addr + 1M 
+user2_addr = 0x101000
+endif
+endif
+
+ifeq ($(CONFIG_FLASH_MODE), qout)
+    flash_mode = 1
+else
+    ifeq ($(CONFIG_FLASH_MODE), dio)
+        flash_mode = 2
+    else
+        ifeq ($(CONFIG_FLASH_MODE), dout)
+            flash_mode = 3
+        else
+            flash_mode = 0
+        endif
+    endif
+endif
+
+ifeq ($(CONFIG_FLASH_FREQ), 26.7)
+    flash_freqdiv = 1
+else
+    ifeq ($(CONFIG_FLASH_FREQ), 20)
+        flash_freqdiv = 2
+    else
+        ifeq ($(CONFIG_FLASH_FREQ), 80)
+            flash_freqdiv = 15
+        else
+            flash_freqdiv = 0
+        endif
+    endif
+endif
+
+ifneq ($(ESPBAUD),)
+CONFIG_ESPBAUD		= $(ESPBAUD)
+endif
+CONFIG_ESPBAUD		?= 230400
+
+ifneq ($(ESPPORT),)
+CONFIG_ESPPORT		= $(ESPPORT)
+endif
+
+##############################################
+#### no user configurable options below here
+###############################################
+SRC_DIR		:= $(MODULES)
+BUILD_BASE	:= $(addprefix $(BUILD_DIR)/,$(MODULES))
+
+SDK_INCDIR		:= $(addprefix -I$(SDK_BASE)/,$(SDK_INCDIR))
+SDK_LIBDIR		:= $(addprefix -L$(SDK_BASE)/,$(SDK_LIBDIR))
+
+ESPSDK_INCDIR	:= $(addprefix -I$(ESPSDK_BASE)/,$(ESPSDK_INCDIR))
+ESPSDK_LIBDIR	:= $(addprefix -L$(ESPSDK_BASE)/,$(ESPSDK_LIBDIR))
+
+INCDIR			:= $(addprefix -I,$(SRC_DIR))
+MODULE_INCDIR	:= -I include
+
+SRC			:= $(foreach sdir,$(SRC_DIR),$(wildcard $(sdir)/*.c))
+OBJ			:= $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRC))
+LIBS		:= $(addprefix -l,$(LIBS))
+APP_AR		:= $(addprefix $(BUILD_DIR)/,$(TARGET)_app.a)
+USER1_OUT	:= $(addprefix $(BUILD_DIR)/,$(TARGET)_user1.out)
+USER2_OUT	:= $(addprefix $(BUILD_DIR)/,$(TARGET)_user2.out)
+
+# linker script used for the above linkier step
+USER1_LD_SCRIPT	= $(CONFIG_USER1_LD_SCRIPT)
+USER2_LD_SCRIPT	= $(CONFIG_USER2_LD_SCRIPT)
+USER1_LD_SCRIPT		:= $(addprefix -T$(SDK_BASE)/$(SDK_LDDIR)/,$(USER1_LD_SCRIPT))
+USER2_LD_SCRIPT		:= $(addprefix -T$(SDK_BASE)/$(SDK_LDDIR)/,$(USER2_LD_SCRIPT))
+
+V ?= $(VERBOSE)
+ifeq ("$(V)","1")
+Q :=
+vecho := @true
+else
+Q := @
+vecho := @echo
+endif
+
+vpath %.c $(SRC_DIR)
+
+define compile-objects
+$1/%.o: %.c $(SRC_DIR)/compile.h
+	$(vecho) "CC $$<"
+	$(Q) $(XCC) $(INCDIR) $(MODULE_INCDIR) $(ESPSDK_INCDIR) $(SDK_INCDIR) $(CFLAGS)  -c $$< -o $$@
+endef
+
+.PHONY: all checkdirs flash clean $(SRC_DIR)/compile.h
+
+all: checkdirs $(USER1_OUT) $(USER2_OUT) $(FW_BASE)/%.bin
+
+$(USER1_OUT): $(APP_AR)
+	$(vecho) "LD $@"
+	$(Q) $(XLD) $(ESPSDK_LIBDIR) $(SDK_LIBDIR) $(USER1_LD_SCRIPT) $(LDFLAGS) -Wl,--start-group $(LIBS) $(APP_AR) -Wl,--end-group -o $@
+
+$(USER2_OUT): $(APP_AR)
+	$(vecho) "LD $@"
+	$(Q) $(XLD) $(ESPSDK_LIBDIR) $(SDK_LIBDIR) $(USER2_LD_SCRIPT) $(LDFLAGS) -Wl,--start-group $(LIBS) $(APP_AR) -Wl,--end-group -o $@
+
+$(APP_AR): $(OBJ)
+	$(vecho) "AR $@"
+	$(Q) $(XAR) cru $@ $^
+
+checkdirs: $(BUILD_BASE) $(FW_BASE)
+
+$(BUILD_BASE):
+	$(Q) mkdir -p $@
+
+firmware:
+	$(Q) mkdir -p $@
+
+clean:
+	$(Q) rm -f $(APP_AR)
+	$(Q) rm -f $(USER1_OUT)
+	$(Q) rm -f $(USER2_OUT)
+	$(Q) rm -rf $(BUILD_DIR)
+	$(Q) rm -rf $(FW_BASE)
+	$(Q) rm -rf .*.bin
+	$(Q) rm -rf flash.bin
+	$(Q) rm -rf *.sym
+	$(Q) rm -f $(SRC_DIR)/compile.h
+
+$(SRC_DIR)/compile.h:
+	$(Q)$(SDK_BASE)/scripts/mkcompile_h $@ $(XCC) $(CONFIG_CPU) $(CONFIG_VERSION) $(CONFIG_HW_VERSION)
+
+$(foreach bdir,$(BUILD_BASE),$(eval $(call compile-objects,$(bdir))))
+
+$(FW_BASE)/%.bin: $(USER1_OUT) $(USER2_OUT)
+	$(vecho) "Generating user1.bin ..."
+	@$(XOBJCOPY) --only-section .text -O binary $(USER1_OUT) .user1.text.bin
+	@$(XOBJCOPY) --only-section .data -O binary $(USER1_OUT) .user1.data.bin
+	@$(XOBJCOPY) --only-section .rodata -O binary $(USER1_OUT) .user1.rodata.bin
+	@$(XOBJCOPY) --only-section .irom0.text -O binary $(USER1_OUT) .user1.irom0text.bin
+	$(vecho) "Generating user2.bin ..."
+	@$(XOBJCOPY) --only-section .text -O binary $(USER2_OUT) .user2.text.bin
+	@$(XOBJCOPY) --only-section .data -O binary $(USER2_OUT) .user2.data.bin
+	@$(XOBJCOPY) --only-section .rodata -O binary $(USER2_OUT) .user2.rodata.bin
+	@$(XOBJCOPY) --only-section .irom0.text -O binary $(USER2_OUT) .user2.irom0text.bin
+
+	$(vecho) "Generate the bootloader bin..."
+	python $(FW_TOOL) $(USER1_OUT) 9 $(flash_mode) $(flash_freqdiv) $(flash_map) 1
+	@cp -f $(SDK_BASE)/bootloader/bin/$(CONFIG_OTA_BOOTLOADER).bin $(FW_BASE)/
+	@dd if=.boothead.bin of=$(FW_BASE)/$(CONFIG_OTA_BOOTLOADER).bin bs=1 conv=notrunc
+
+ifeq ($(CONFIG_OTA_BOOTLOADER), boot_v1.1)
+	$(vecho) "Using bootloader $(CONFIG_OTA_BOOTLOADER), bootmode = 1"
+	python $(FW_TOOL) $(USER1_OUT) 1 $(flash_mode) $(flash_freqdiv) $(flash_map) 1
+	$(vecho) "Generated user1.bin!"
+
+	python $(FW_TOOL) $(USER2_OUT) 1 $(flash_mode) $(flash_freqdiv) $(flash_map) 2
+	$(vecho) "Generated user2.bin!"
+else
+	$(vecho) "Using bootloader $(CONFIG_OTA_BOOTLOADER), bootmode = 2"
+	python $(FW_TOOL) $(USER1_OUT) 2 $(flash_mode) $(flash_freqdiv) $(flash_map) 1
+	$(vecho) "Generated user1.bin!"
+
+	python $(FW_TOOL) $(USER2_OUT) 2 $(flash_mode) $(flash_freqdiv) $(flash_map) 2
+	$(vecho) "Generated user2.bin!"
+endif
+
+	@mv .user1.bin $(FW_BASE)/user1.bin
+	@mv .user2.bin $(FW_BASE)/user2.bin
+	@rm -f .*.bin
+	@echo "Generate user1.bin and user2.bin successully in $(FW_BASE)"
+
+	@echo "$(CONFIG_OTA_BOOTLOADER).bin  ---> 0x00000"
+	@echo "user1.bin ---> $(user1_addr)"
+	@echo "user2.bin ---> $(user2_addr)"
+ 
+#B3=$(shell printf "%X%X" $(flash_map) $(flash_freqdiv))
+#printf "\xEA\x3\x$(flash_mode)\x$(B3)" | dd conv=notrunc of=$(BOOT_HEAD) bs=1
+
+flash: all
+	$(vecho) "Upload the bin to flash ..."
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)			\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_SYSCONF_ADDR)+0x2000))) -cf $(ESPSDK_BASE)/bin/blank.bin		\
+				-ca $(CONFIG_BOOT_ADDR) -cf $(FW_BASE)/$(CONFIG_OTA_BOOTLOADER).bin		\
+				-ca $(user1_addr) -cf $(FW_BASE)/user1.bin
+
+user1:
+	$(vecho) "Upload the bin to flash ..."
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)			\
+				-ca $(user1_addr) -cf $(FW_BASE)/user1.bin
+
+user2:
+	$(vecho) "Upload the bin to flash ..."
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)			\
+				-ca $(user2_addr) -cf $(FW_BASE)/user2.bin
+
+produce: all
+	$(vecho) "Upload the bin to flash ..."
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)			\
+				-ca $(CONFIG_YUNCONF_ADDR) -cf $(ESPSDK_BASE)/bin/blank.bin				\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_YUNCONF_ADDR)+0x1000))) -cf $(ESPSDK_BASE)/bin/blank.bin		\
+				-ca $(CONFIG_SYSCONF_ADDR) -cf $(ESPSDK_BASE)/bin/blank.bin				\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_SYSCONF_ADDR)+0x1000))) -cf $(ESPSDK_BASE)/bin/blank.bin		\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_SYSCONF_ADDR)+0x2000))) -cf $(ESPSDK_BASE)/bin/blank.bin		\
+				-ca $(CONFIG_RFCAL_ADDR) -cf $(ESPSDK_BASE)/bin/blank.bin				\
+				-ca $(CONFIG_RFINIT_ADDR) -cf $(ESPSDK_BASE)/bin/$(CONFIG_RF_INIT_DATA)	\
+				-ca $(CONFIG_BOOT_ADDR) -cf $(FW_BASE)/$(CONFIG_OTA_BOOTLOADER).bin		\
+				-ca $(user1_addr) -cf $(FW_BASE)/user1.bin
+
+rfinit:
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT) 			\
+				-ca $(CONFIG_RFCAL_ADDR) -cf $(ESPSDK_BASE)/bin/blank.bin				\
+				-ca $(CONFIG_RFINIT_ADDR) -cf $(ESPSDK_BASE)/bin/$(CONFIG_RF_INIT_DATA)
+
+sysclean:
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)		\
+				-ca $(CONFIG_SYSCONF_ADDR) -cf $(ESPSDK_BASE)/bin/blank.bin		\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_SYSCONF_ADDR)+0x1000))) -cf $(ESPSDK_BASE)/bin/blank.bin
+
+yunclean:
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)		\
+				-ca $(CONFIG_YUNCONF_ADDR) -cf $(ESPSDK_BASE)/bin/blank.bin		\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_YUNCONF_ADDR)+0x1000))) -cf $(ESPSDK_BASE)/bin/blank.bin
+
+zero:
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)		\
+				-ca $(CONFIG_SYSCONF_ADDR) -cf $(ESPSDK_BASE)/bin/blank.bin		\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_SYSCONF_ADDR)+0x1000))) -cf $(ESPSDK_BASE)/bin/blank.bin	\
+				-ca $(CONFIG_YUNCONF_ADDR) -cf $(ESPSDK_BASE)/bin/blank.bin		\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_YUNCONF_ADDR)+0x1000))) -cf $(ESPSDK_BASE)/bin/blank.bin
+
+# Reset the device id to $(DID), for testing
+# make devid DID=WotD0000000208 PASS=xxxxxxxx
+
+getdevid:
+	-$(ESPTOOL_PY) --port $(CONFIG_ESPPORT) read_flash $(CONFIG_YUNCONF_ADDR) 0x1000 mjyun.bin
+	-$(Q) echo "The original mjyun data is got into mjyun.bin"
+
+getsys:
+	-$(ESPTOOL_PY) --port $(CONFIG_ESPPORT) read_flash $(CONFIG_SYSCONF_ADDR) 0x1000 sys.bin
+
+setsys:
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)	\
+				-ca $(CONFIG_SYSCONF_ADDR) -cf sys.bin		\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_SYSCONF_ADDR)+0x1000))) -cf sys.bin
+
+getyun:
+	-$(ESPTOOL_PY) --port $(CONFIG_ESPPORT) read_flash $(CONFIG_YUNCONF_ADDR) 0x1000 mjyun.bin
+	-$(Q) echo "The original mjyun data is got into mjyun.bin"
+
+setyun:
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)		\
+			-ca $(CONFIG_YUNCONF_ADDR) -cf mjyun.bin				\
+			-ca $(shell printf "0x%x" $$(($(CONFIG_YUNCONF_ADDR)+0x1000))) -cf mjyun.bin
+
+setdevid:
+	-$(if $(value DID),, $(error Device ID (DID) is not set!))
+	-$(if $(value PASS),, $(error Device Password (PASS) is not set!))
+	-$(if $(wildcard mjyun.bin),, $(error please run 'make getdevid' to backup devid first!))
+	-$(Q) cp mjyun.bin jackxx.bin
+	-echo "The original mjyun data is backuped in mjyun.bin"
+	-printf $(DID) | dd conv=notrunc of=jackxx.bin bs=1 seek=35
+	-printf $(PASS) | dd conv=notrunc of=jackxx.bin bs=1 seek=68
+	-$(ESPTOOL) -cd $(CONFIG_BOARD) -cb $(CONFIG_ESPBAUD) -cp $(CONFIG_ESPPORT)	\
+				-ca $(CONFIG_YUNCONF_ADDR) -cf jackxx.bin					\
+				-ca $(shell printf "0x%x" $$(($(CONFIG_YUNCONF_ADDR)+0x1000))) -cf jackxx.bin
+	-$(Q) rm -f jackxx.bin
+
+# analysis the memory usage of our firmware
+mem: all
+	-$(Q) $(ESPTOOL_PY) elf2image -o /tmp/ $(TARGET_OUT)
+	-$(Q) rm -f /tmp/*.bin
+
+# erase the whole flash!
+erase:
+	-$(ESPTOOL_PY) --port $(CONFIG_ESPPORT) erase_flash
+
+dump:
+	-$(ESPTOOL_PY) --port $(CONFIG_ESPPORT) --baud $(CONFIG_ESPBAUD) read_flash 0x0 $(shell echo $$(($(FLASH_SIZE)*1024))) flash.bin
